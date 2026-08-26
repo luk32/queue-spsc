@@ -92,9 +92,9 @@ auto CirularBufferQueue<DataT>::tryPush(Args &&...args) -> bool {
 
   const auto idx = back_idx++;
   queue[idx % capacity()] = {std::forward<Args...>(args)...};
-  /* TODO: Cannot unlock publish updated index because if reader caught up,
-   it could start reading during the move, unless we locked the object itself
-   in such a case.
+  /* TODO: Cannot unlock and publish updated index because if the reader caught
+   up, it could start reading during the move, unless we locked the object
+   itself in such a case.
 
    Also, better "move" doesn't throw or the lock won't get unlocked.
    */
@@ -106,7 +106,7 @@ template <typename DataT>
 auto CirularBufferQueue<DataT>::tryPop(DataT &destination) -> bool {
   std::unique_lock lock(mtx_counter);
 
-  if (size()) {
+  if (size() == 0) {
     lock.unlock();
     return false;
   }
