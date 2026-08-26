@@ -53,7 +53,7 @@ auto NaiveQueue<DataT>::tryPush(Args&&... args) -> bool
 {
     const std::lock_guard lock(mtx);
     if(size() < capacity()) {
-        queue.push(std::forward<Args>(args)...);
+        queue.emplace(std::forward<Args>(args)...);
         return true;
     }
 

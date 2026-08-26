@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../naive.hpp"
+#include "../circular_buffer.hpp"
 
 const std::size_t int_vector_size = 128*1024u;
 
@@ -38,7 +39,7 @@ class QueueTest : public testing::Test {
     }
 };
 
-using QueueTypes = ::testing::Types<NaiveQueue<DataT>>;
+using QueueTypes = ::testing::Types<NaiveQueue<DataT>, CirularBufferQueue<DataT>>;
 TYPED_TEST_SUITE(QueueTest, QueueTypes);
 
 TYPED_TEST(QueueTest, IsEmptyInitially) {
@@ -108,7 +109,7 @@ TYPED_TEST(QueueTest, SingleThreadLargeRandomSet) {
 Tests whether concurrent pushing and popping from the queue yields original vector.
 
 WARNING: False positives might happen. Beware that in case of multithreaded tests the 
-result here  might be volatile, depending on the correctness of syncronization between 
+result here might be volatile, depending on the correctness of syncronization between 
 threads.
 */
 TYPED_TEST(QueueTest, TwoThreadLargeRandomSet) {
@@ -139,4 +140,3 @@ TYPED_TEST(QueueTest, TwoThreadLargeRandomSet) {
     EXPECT_EQ(result.size(), expected.size());
     EXPECT_THAT(result, ::testing::ContainerEq(expected));
 }
-
