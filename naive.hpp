@@ -22,7 +22,8 @@ class NaiveQueue {
     
     public:
         NaiveQueue(std::size_t capacity) : cap{capacity} {};
-        auto tryPush(const DataT& element) -> bool;
+        template <typename... Args>
+        auto tryPush(Args&&... args) -> bool;
         auto tryPop(DataT& destination) -> bool;
         auto peek() const -> const DataT&;
         auto size() const -> std::size_t;
@@ -47,11 +48,12 @@ auto NaiveQueue<DataT>::size() const -> std::size_t
 }
 
 template <typename DataT>
-auto NaiveQueue<DataT>::tryPush(const DataT& element) -> bool
+template <typename... Args>
+auto NaiveQueue<DataT>::tryPush(Args&&... args) -> bool
 {
     const std::lock_guard lock(mtx);
     if(size() < capacity()) {
-        queue.push(element);
+        queue.push(std::forward<Args>(args)...);
         return true;
     }
 
