@@ -36,22 +36,22 @@ public:
         queue{std::make_unique_for_overwrite<DataT[]>(capacity)} {};
 
   /* Pushes new element onto the queue.
-  
+
   It will move the element if possible and copy otherwise.
-  
+
   Returns true if succeeded and false otherwise. E.g. if queue is full.
   */
   template <typename... Args> auto tryPush(Args &&...args) -> bool;
-  
+
   /* Pops element from the queue into the destination object via move.
-  
+
   Returns true if succeeded and false otherwise. E.g. when queue is empty.
   */
   auto tryPop(DataT &destination) -> bool;
 
   /* Returns reference to the front of the queue.
 
-  Popping will invalidate this reference. 
+  Popping will invalidate this reference.
   */
   auto peek() const -> const DataT &;
 
