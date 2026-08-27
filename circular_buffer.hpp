@@ -31,6 +31,8 @@ template <typename DataT> class CirularBufferQueue {
   static_assert(std::is_move_assignable_v<DataT>, "Data type must be movable.");
 
 public:
+  using ValueT = DataT;
+
   CirularBufferQueue(std::size_t capacity)
       : cap{capacity},
         queue{std::make_unique_for_overwrite<DataT[]>(capacity)} {};

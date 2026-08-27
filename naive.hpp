@@ -20,6 +20,8 @@ template <typename DataT> class NaiveQueue {
   static_assert(std::is_move_assignable_v<DataT>, "Data type must be movable.");
 
 public:
+  using ValueT = DataT;
+
   NaiveQueue(std::size_t capacity) : cap{capacity} {};
   template <typename... Args> auto tryPush(Args &&...args) -> bool;
   auto tryPop(DataT &destination) -> bool;
