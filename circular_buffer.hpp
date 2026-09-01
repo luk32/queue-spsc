@@ -1,7 +1,8 @@
 /**
 Copyright Łukasz Kucharski 2026
 
-Naive implementation of a single producer - single consumer FIFO queue.
+Circular buffer implementation of a single producer - single consumer FIFO
+queue.
 
 The implementation ensures correctness for independent pushing and consuming
 threads.
@@ -21,13 +22,14 @@ catches up to the back.
 
 #pragma once
 
-#include <cstddef>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <type_traits>
 #include <utility>
 
-template <typename DataT> class CirularBufferQueue {
+template <typename DataT>
+class CirularBufferQueue {
   static_assert(std::is_move_assignable_v<DataT>, "Data type must be movable.");
 
 public:
@@ -43,7 +45,9 @@ public:
 
   Returns true if succeeded and false otherwise. E.g. if queue is full.
   */
-  template <typename... Args> auto tryPush(Args &&...args) -> bool;
+  template <typename... Args>
+    requires std::constructible_from<DataT, Args...>
+  auto tryPush(Args &&...args) -> bool;
 
   /* Pops element from the queue into the destination object via move.
 
@@ -65,7 +69,7 @@ public:
 
 private:
   mutable std::mutex mtx_counter;
-
+  std::atomic_flag writing;
   std::unique_ptr<DataT[]> queue;
   std::size_t front_idx = 0;
   std::size_t back_idx = 0;
@@ -84,6 +88,7 @@ auto CirularBufferQueue<DataT>::size() const -> std::size_t {
 
 template <typename DataT>
 template <typename... Args>
+  requires std::constructible_from<DataT, Args...>
 auto CirularBufferQueue<DataT>::tryPush(Args &&...args) -> bool {
   std::unique_lock lock_ctr(mtx_counter);
 
@@ -92,29 +97,32 @@ auto CirularBufferQueue<DataT>::tryPush(Args &&...args) -> bool {
     return false;
   }
 
+  writing.test_and_set(std::memory_order_acquire);
   const auto idx = back_idx++;
-  queue[idx % capacity()] = {std::forward<Args...>(args)...};
-  /* TODO: Cannot unlock and publish updated index because if the reader caught
-   up, it could start reading during the move, unless we locked the object
-   itself in such a case.
+  lock_ctr.unlock();
 
+  queue[idx % capacity()] = {std::forward<Args...>(args)...};
+  writing.clear(std::memory_order_release);
+  writing.notify_one();
+  /*
    Also, better "move" doesn't throw or the lock won't get unlocked.
    */
-  lock_ctr.unlock();
   return true;
 }
 
 template <typename DataT>
 auto CirularBufferQueue<DataT>::tryPop(DataT &destination) -> bool {
   std::unique_lock lock(mtx_counter);
-
   if (size() == 0) {
     lock.unlock();
     return false;
   }
-
   const auto idx = front_idx++;
   lock.unlock();
+
+  if (size() == 0 && writing.test(std::memory_order_acquire)) {
+    writing.wait(true);
+  }
 
   destination = std::move(queue[idx % capacity()]);
   return true;
