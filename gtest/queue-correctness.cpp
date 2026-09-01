@@ -12,7 +12,8 @@ const std::size_t int_vector_size = 128 * 1024u;
 
 using DataT = int;
 
-template <typename QueueT> class QueueTest : public testing::Test {
+template <typename QueueT>
+class QueueTest : public testing::Test {
 protected:
   QueueTest()
       : q0_{int_vector_size}, q1_{1}, q2_{2}, q4_{int_vector_size >> 1} {

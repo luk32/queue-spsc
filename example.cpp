@@ -22,6 +22,11 @@ struct C {
     std::cout << "copy\n";
     return *this;
   }
+
+  friend std::ostream &operator<<(std::ostream &os, const C &) {
+    os << "C ";
+    return os;
+  }
 };
 
 int main() {

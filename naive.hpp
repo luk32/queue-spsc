@@ -16,14 +16,19 @@ threads.
 #include <type_traits>
 #include <utility>
 
-template <typename DataT> class NaiveQueue {
+template <typename DataT>
+class NaiveQueue {
   static_assert(std::is_move_assignable_v<DataT>, "Data type must be movable.");
 
 public:
   using ValueT = DataT;
 
   NaiveQueue(std::size_t capacity) : cap{capacity} {};
-  template <typename... Args> auto tryPush(Args &&...args) -> bool;
+
+  template <typename... Args>
+    requires std::constructible_from<DataT, Args...>
+  auto tryPush(Args &&...args) -> bool;
+
   auto tryPop(DataT &destination) -> bool;
   auto peek() const -> const DataT &;
   auto size() const -> std::size_t;
@@ -40,12 +45,14 @@ auto NaiveQueue<DataT>::capacity() const -> std::size_t {
   return cap;
 }
 
-template <typename DataT> auto NaiveQueue<DataT>::size() const -> std::size_t {
+template <typename DataT>
+auto NaiveQueue<DataT>::size() const -> std::size_t {
   return queue.size();
 }
 
 template <typename DataT>
 template <typename... Args>
+  requires std::constructible_from<DataT, Args...>
 auto NaiveQueue<DataT>::tryPush(Args &&...args) -> bool {
   const std::lock_guard lock(mtx);
   if (size() < capacity()) {
