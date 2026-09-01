@@ -31,6 +31,10 @@ protected:
     static std::random_device rnd_dev;
     static std::default_random_engine rnd_eng{rnd_dev()};
     std::ranges::generate(vect, [] { return rnd_eng(); });
+
+    // Useful for debugging.
+    // static size_t i = 0;
+    // std::ranges::generate(vect, [&] { return i++; });
   }
 };
 
@@ -82,15 +86,15 @@ TYPED_TEST(QueueTest, SingleThreadLargeRandomSet) {
   this->reset_with_random_vals(expected);
 
   for (auto &e : expected) {
-    ASSERT_NO_THROW(this->q0_.tryPush(e));
+    ASSERT_NO_THROW(while (!this->q0_.tryPush(e)));
   }
   EXPECT_EQ(this->q0_.size(), int_vector_size);
 
   DataT e;
   while (this->q0_.size()) {
     while (result.size() < int_vector_size) {
-      this->q0_.tryPop(e);
-      ASSERT_NO_THROW(result.emplace_back(e));
+      ASSERT_NO_THROW(while (!this->q0_.tryPop(e)));
+      result.emplace_back(e);
     }
   }
 
@@ -113,7 +117,10 @@ TYPED_TEST(QueueTest, TwoThreadLargeRandomSet) {
 
   std::thread producer([&] {
     for (auto &e : expected) {
-      ASSERT_NO_THROW(this->q0_.tryPush(e));
+      // because we expect all elements to be pushed
+      // we have to ensure every push succeded
+      // So if push fail, we spin until it works.
+      ASSERT_NO_THROW(while (!this->q4_.tryPush(e)));
     }
   });
 
@@ -121,9 +128,9 @@ TYPED_TEST(QueueTest, TwoThreadLargeRandomSet) {
     DataT e;
     while (result.size() < int_vector_size) {
       // Need to assume that consumer thread caught up to producer.
-      if (this->q0_.tryPop(e)) {
-        ASSERT_NO_THROW(result.emplace_back(e));
-      }
+      // We spin until we get the element.
+      ASSERT_NO_THROW(while (!this->q4_.tryPop(e)));
+      result.emplace_back(e);
     }
   });
 
