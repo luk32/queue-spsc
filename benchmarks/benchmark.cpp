@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <random>
 #include <string>
 #include <thread>
@@ -158,8 +159,9 @@ template <typename Q>
 static void BM_2ThreadPushPop(benchmark::State &state) {
   using Value = typename Q::ValueT;
 
-  std::vector<Value> random_ints(state.range());
-  std::size_t pop_count;
+  std::vector<Value> random_ints(state.range() >> 2);
+  
+  // use queue a quarter of size of the input
   Q q(state.range());
 
   for (auto _ : state) {
@@ -174,6 +176,52 @@ static void BM_2ThreadPushPop(benchmark::State &state) {
     });
 
     std::jthread consumer([&] {
+      std::size_t pop_count;
+      Value e;
+      while (pop_count++ < state.range()) {
+        q.tryPop(e);
+      }
+    });
+
+    producer.join();
+    consumer.join();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed_seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
+
+    state.SetIterationTime(elapsed_seconds.count());
+  }
+
+  state.SetBytesProcessed(state.range() * state.iterations() * sizeof(Value));
+  state.SetItemsProcessed(state.range() * state.iterations());
+}
+
+template <typename Q>
+static void BM_2ThreadChunkedPushPop(benchmark::State &state) {
+  using Value = typename Q::ValueT;
+
+  std::vector<Value> random_ints(state.range());
+  // use 2MB chunks
+  const auto chunk_size = 2 * 1048 * 1048 / sizeof(Value);
+  auto chunks = random_ints | std::views::chunk(chunk_size);
+  
+  // use queue a quarter of size of the input
+  Q q(state.range() >> 2);
+
+  for (auto _ : state) {
+    reset_with_random_vals(random_ints);
+
+    // Using manual timing because Start/Pause timing has too much overhead
+    auto start = std::chrono::high_resolution_clock::now();
+    std::jthread producer([&] {
+      for (auto chunk : chunks) {
+        q.tryPush(chunk);
+      }
+    });
+
+    std::jthread consumer([&] {
+      std::size_t pop_count;
       Value e;
       while (pop_count++ < state.range()) {
         q.tryPop(e);
@@ -197,10 +245,10 @@ static void BM_2ThreadPushPop(benchmark::State &state) {
 /* --------- int benchmarks ---------------------------*/
 BENCHMARK(BM_PushOnly<NaiveQueue>)->RangeMultiplier(16)->Range(16, 1 << 28);
 BENCHMARK(BM_PopOnly<NaiveQueue>)->RangeMultiplier(16)->Range(16, 1 << 28);
-BENCHMARK(BM_SequenialPushPop<NaiveQueue<int>>)
+BENCHMARK(BM_SequenialPushPop<NaiveQueue<int64_t>>)
     ->RangeMultiplier(16)
     ->Range(16, 1 << 28);
-BENCHMARK(BM_2ThreadPushPop<NaiveQueue<int>>)
+BENCHMARK(BM_2ThreadPushPop<NaiveQueue<int64_t>>)
     ->ThreadRange(1, 2)
     ->RangeMultiplier(16)
     ->Range(16, 1 << 28)
@@ -212,10 +260,10 @@ BENCHMARK(BM_PushOnly<CirularBufferQueue>)
 BENCHMARK(BM_PopOnly<CirularBufferQueue>)
     ->RangeMultiplier(16)
     ->Range(16, 1 << 28);
-BENCHMARK(BM_SequenialPushPop<CirularBufferQueue<int>>)
+BENCHMARK(BM_SequenialPushPop<CirularBufferQueue<int64_t>>)
     ->RangeMultiplier(16)
     ->Range(16, 1 << 28);
-BENCHMARK(BM_2ThreadPushPop<CirularBufferQueue<int>>)
+BENCHMARK(BM_2ThreadPushPop<CirularBufferQueue<int64_t>>)
     ->ThreadRange(1, 2)
     ->RangeMultiplier(16)
     ->Range(16, 1 << 28)
@@ -238,12 +286,22 @@ BENCHMARK(BM_2ThreadPushPop<CirularBufferQueue<std::string>>)
 BENCHMARK(BM_2ThreadPushPop<NaiveQueue<Beefy<128>>>)
     ->ThreadRange(1, 2)
     ->RangeMultiplier(8)
-    ->Range(16, 1 << 16)
+    ->Range(16, 1 << 19)
     ->UseRealTime();
 BENCHMARK(BM_2ThreadPushPop<CirularBufferQueue<Beefy<128>>>)
     ->ThreadRange(1, 2)
     ->RangeMultiplier(8)
+    ->Range(16, 1 << 19)
+    ->UseRealTime();
+BENCHMARK(BM_2ThreadChunkedPushPop<CirularBufferQueue<Beefy<128>>>)
+    ->ThreadRange(1, 2)
+    ->RangeMultiplier(8)
     ->Range(16, 1 << 16)
+    ->UseRealTime();
+BENCHMARK(BM_2ThreadChunkedPushPop<CirularBufferQueue<int64_t>>)
+    ->ThreadRange(1, 2)
+    ->RangeMultiplier(16)
+    ->Range(16, 1 << 28)
     ->UseRealTime();
 
 BENCHMARK_MAIN();
