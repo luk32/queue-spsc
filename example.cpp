@@ -14,7 +14,7 @@ struct C {
   C() { std::cout << "default\n"; }
   C(const C &other) { std::cout << "copy\n"; }
   C(C &&other) { *this = std::move(other); }
-  C &operator=(C &&other) {
+  C &operator=(C &&other) noexcept {
     std::cout << "move\n";
     return *this;
   }

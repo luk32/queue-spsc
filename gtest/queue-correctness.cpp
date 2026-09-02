@@ -8,7 +8,7 @@
 #include "../circular_buffer.hpp"
 #include "../naive.hpp"
 
-const std::size_t int_vector_size = 128 * 1024u;
+const std::size_t int_vector_size = 1024 * 1024u;
 
 using DataT = int;
 
@@ -118,19 +118,24 @@ TYPED_TEST(QueueTest, TwoThreadLargeRandomSet) {
 
   std::thread producer([&] {
     for (auto &e : expected) {
-      // because we expect all elements to be pushed
-      // we have to ensure every push succeded
-      // So if push fail, we spin until it works.
-      ASSERT_NO_THROW(while (!this->q4_.tryPush(e)));
+      std::size_t retry_count = 0;
+      // We expect all elements to be pushed, thus we have to ensure every push
+      // succeded If push fails, we spin until it works. We shouldn't fail to
+      // push more times than there is elements to push.
+      while (!this->q4_.tryPush(e))
+        ASSERT_TRUE(retry_count++ < int_vector_size);
     }
   });
 
   std::thread consumer([&] {
     DataT e;
     while (result.size() < int_vector_size) {
+      std::size_t retry_count = 0;
       // Need to assume that consumer thread caught up to producer.
       // We spin until we get the element.
-      ASSERT_NO_THROW(while (!this->q4_.tryPop(e)));
+      // We shouldn't fail more times than there is elements to pull in total.
+      while (!this->q4_.tryPop(e))
+        ASSERT_TRUE(retry_count++ < int_vector_size);
       result.emplace_back(e);
     }
   });
@@ -166,14 +171,15 @@ TEST_F(ChunkedPushTwoThreadTest, TwoThreadLargeRandomSet) {
   this->reset_with_random_vals(expected);
 
   const auto chunk_size = int_vector_size * sizeof(DataT) / (512 * 1024);
-  ASSERT_TRUE(chunk_size>2);
-  ASSERT_TRUE(chunk_size<q.capacity());
+  ASSERT_TRUE(chunk_size > 2);
+  ASSERT_TRUE(chunk_size < q.capacity());
 
   std::thread producer([&] {
     for (auto chunk : expected | std::views::chunk(chunk_size)) {
       std::size_t retry_count = 0;
       // We shouldn't fail to push more times than there is elements to push
-      while (!q.tryPush(chunk)) ASSERT_TRUE(retry_count++ < int_vector_size);
+      while (!q.tryPush(chunk))
+        ASSERT_TRUE(retry_count++ < int_vector_size);
     }
   });
 
@@ -184,7 +190,8 @@ TEST_F(ChunkedPushTwoThreadTest, TwoThreadLargeRandomSet) {
       // We spin until we get the element.
       std::size_t retry_count = 0;
       // We shouldn't fail to push more times than there is elements to pull
-      while (!this->q.tryPop(e)) ASSERT_TRUE(retry_count++ < int_vector_size);
+      while (!this->q.tryPop(e))
+        ASSERT_TRUE(retry_count++ < int_vector_size);
       result.emplace_back(e);
     }
   });

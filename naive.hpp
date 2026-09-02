@@ -19,7 +19,8 @@ threads.
 template <typename DataT>
 class NaiveQueue {
   static_assert(std::is_move_assignable_v<DataT>, "Data type must be movable.");
-
+  static_assert(std::is_nothrow_move_assignable_v<DataT>,
+                "Move must not throw.");
 public:
   using ValueT = DataT;
 

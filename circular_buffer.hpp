@@ -31,6 +31,8 @@ catches up to the back.
 template <typename DataT>
 class CirularBufferQueue {
   static_assert(std::is_move_assignable_v<DataT>, "Data type must be movable.");
+  static_assert(std::is_nothrow_move_assignable_v<DataT>,
+                "Move must not throw.");
 
 public:
   using ValueT = DataT;
@@ -85,10 +87,10 @@ private:
   std::unique_ptr<DataT[]> queue;
 
   alignas(std::hardware_destructive_interference_size)
-  std::atomic_size_t front_idx = 0;
+      std::atomic_size_t front_idx = 0;
 
-  alignas(std::hardware_destructive_interference_size)
-  std::atomic_size_t commited_idx = 0;
+  alignas(std::hardware_destructive_interference_size) std::atomic_size_t
+      commited_idx = 0;
   std::size_t back_idx = 0;
   std::size_t cap;
 };
