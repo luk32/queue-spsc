@@ -141,3 +141,57 @@ TYPED_TEST(QueueTest, TwoThreadLargeRandomSet) {
   EXPECT_EQ(result.size(), expected.size());
   EXPECT_THAT(result, ::testing::ContainerEq(expected));
 }
+
+class ChunkedPushTwoThreadTest : public testing::Test {
+protected:
+  ChunkedPushTwoThreadTest() : q{int_vector_size >> 2} {}
+
+  CirularBufferQueue<DataT> q;
+
+  void reset_with_random_vals(std::vector<DataT> &vect) {
+    static std::random_device rnd_dev;
+    static std::default_random_engine rnd_eng{rnd_dev()};
+    std::ranges::generate(vect, [] { return rnd_eng(); });
+
+    // Useful for debugging.
+    // static size_t i = 0;
+    // std::ranges::generate(vect, [&] { return i++; });
+  }
+};
+
+TEST_F(ChunkedPushTwoThreadTest, TwoThreadLargeRandomSet) {
+  std::vector<DataT> expected(int_vector_size);
+  std::vector<DataT> result;
+  result.reserve(int_vector_size);
+  this->reset_with_random_vals(expected);
+
+  const auto chunk_size = int_vector_size * sizeof(DataT) / (512 * 1024);
+  ASSERT_TRUE(chunk_size>2);
+  ASSERT_TRUE(chunk_size<q.capacity());
+
+  std::thread producer([&] {
+    for (auto chunk : expected | std::views::chunk(chunk_size)) {
+      std::size_t retry_count = 0;
+      // We shouldn't fail to push more times than there is elements to push
+      while (!q.tryPush(chunk)) ASSERT_TRUE(retry_count++ < int_vector_size);
+    }
+  });
+
+  std::thread consumer([&] {
+    DataT e;
+    while (result.size() < int_vector_size) {
+      // Need to assume that consumer thread caught up to producer.
+      // We spin until we get the element.
+      std::size_t retry_count = 0;
+      // We shouldn't fail to push more times than there is elements to pull
+      while (!this->q.tryPop(e)) ASSERT_TRUE(retry_count++ < int_vector_size);
+      result.emplace_back(e);
+    }
+  });
+
+  producer.join();
+  consumer.join();
+
+  EXPECT_EQ(result.size(), expected.size());
+  EXPECT_THAT(result, ::testing::ContainerEq(expected));
+}

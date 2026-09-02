@@ -49,6 +49,15 @@ public:
     requires std::constructible_from<DataT, Args...>
   auto tryPush(Args &&...args) -> bool;
 
+  /* Pushes a range of elements onto the queue.
+
+  It will move the element if possible and copy otherwise.
+
+  Returns true if succeeded and false otherwise. E.g. if queue is full.
+  */
+  template <std::ranges::sized_range R>
+  auto tryPush(R &&r) -> bool;
+
   /* Pops element from the queue into the destination object via move.
 
   Returns true if succeeded and false otherwise. E.g. when queue is empty.
@@ -64,6 +73,9 @@ public:
   // Returns current number of elements on the queue.
   auto size() const -> std::size_t;
 
+  // Returns number of elements completely written on the queue.
+  auto committed_elements() const -> std::size_t;
+
   // Returns maximum number of elements on the queue.
   auto capacity() const -> std::size_t;
 
@@ -71,7 +83,12 @@ private:
   mutable std::mutex mtx_counter;
   std::atomic_flag writing;
   std::unique_ptr<DataT[]> queue;
-  std::size_t front_idx = 0;
+
+  alignas(std::hardware_destructive_interference_size)
+  std::atomic_size_t front_idx = 0;
+
+  alignas(std::hardware_destructive_interference_size)
+  std::atomic_size_t commited_idx = 0;
   std::size_t back_idx = 0;
   std::size_t cap;
 };
@@ -90,48 +107,52 @@ template <typename DataT>
 template <typename... Args>
   requires std::constructible_from<DataT, Args...>
 auto CirularBufferQueue<DataT>::tryPush(Args &&...args) -> bool {
-  std::unique_lock lock_ctr(mtx_counter);
-
   if (size() == capacity()) {
-    lock_ctr.unlock();
     return false;
   }
 
-  writing.test_and_set(std::memory_order_acquire);
-  const auto idx = back_idx++;
-  lock_ctr.unlock();
+  queue[back_idx % capacity()] = {std::forward<Args...>(args)...};
+  /* Better DataT "move" doesn't throw */
+  back_idx++;
+  commited_idx.store(back_idx, std::memory_order_release);
+  return true;
+}
 
-  queue[idx % capacity()] = {std::forward<Args...>(args)...};
-  writing.clear(std::memory_order_release);
-  writing.notify_one();
-  /*
-   Also, better "move" doesn't throw or the lock won't get unlocked.
-   */
+template <typename DataT>
+template <std::ranges::sized_range R>
+auto CirularBufferQueue<DataT>::tryPush(R &&r) -> bool {
+  if (size() + r.size() > capacity()) {
+    return false;
+  }
+
+  back_idx += r.size();
+  std::size_t i = 0;
+  for (auto &e : r) {
+    queue[(commited_idx + i++) % capacity()] = std::move(e);
+  }
+  commited_idx.store(commited_idx + r.size(), std::memory_order_release);
+
+  /* Better DataT "move" doesn't throw */
+
   return true;
 }
 
 template <typename DataT>
 auto CirularBufferQueue<DataT>::tryPop(DataT &destination) -> bool {
-  std::unique_lock lock(mtx_counter);
-  if (size() == 0) {
-    lock.unlock();
+  if (commited_idx - front_idx < 1) {
     return false;
   }
-  const auto idx = front_idx++;
-  lock.unlock();
 
-  if (size() == 0 && writing.test(std::memory_order_acquire)) {
-    writing.wait(true);
-  }
-
-  destination = std::move(queue[idx % capacity()]);
+  destination =
+      std::move(queue[front_idx.load(std::memory_order_acquire) % capacity()]);
+  front_idx.store(front_idx + 1, std::memory_order_release);
   return true;
 }
 
 template <typename DataT>
 auto CirularBufferQueue<DataT>::peek() const -> const DataT & {
-  const std::lock_guard lock(mtx_counter);
   return queue[front_idx];
 }
-// TODO: I'm actually curious if this unlocks before copy if the caller assigns
-// to a value. Using a reference in multhithreaded context is dangerous.
+// TODO: I'm actually curious if this unlocks before copy if the caller
+// assigns to a value. Using a reference in multhithreaded context is
+// dangerous.
