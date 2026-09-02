@@ -3,7 +3,7 @@ Single producer single consumer queue implementation.
 
 This is my toy implementation of a SPSC Queue as a template library. It supports concurrent enquing and dequing elements by two threads.
 
-To compile, test and benchmark it requires CMake 3.15+ and clang or gcc with c++20 support.
+To compile, test and benchmark it requires CMake 3.15+ and clang or gcc with c++23 support.
 
 You can do it by executing:
 ```
@@ -30,12 +30,13 @@ Some remarks
 1. Allocation will default initialize cells, so the user pays for that.
 2. Elements cannot be constructed in-place, because the storage is already taken. They are, instead, moved in and out of the queue by pop and push.
 
-This implementation doesn't lock  whole queue for reading, however for writing there still is a lock on the storage because of possible overlap in written/accessed element in case the queue is (near) empty.
+To sum up, **limitations** are:
+1. Stored `DataT` must be default constructible, and `nothrow_move_assignable`.
+2. Also, currently the number of total pushes cannot exceed `std::numeric_limits<std::size_t>::max()`. 
 
 Further obvious improvements would be:
 
-1. Use `byte` array for storage and placement `new` .
-2. Figure out syncronization pattern to lock storage only when queue has 0/1 elements. 
+1. Use `byte` array for storage and placement `new` or `construct_at`
 
 --------------------------------------
 
