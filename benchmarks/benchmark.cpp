@@ -89,37 +89,49 @@ BENCHMARK(BM_MemoryReadThroughput)
 
 template <template <typename> typename Q>
 static void BM_PushOnly(benchmark::State &state) {
-  Q<int> q(state.range());
-  std::vector<int> random_ints(state.range());
+  using Value = int;
+  Q<Value> q(state.range());
+  std::vector<Value> random_vals(state.range());
 
   for (auto _ : state) {
-    state.PauseTiming();
-    reset_with_random_vals(random_ints);
-    state.ResumeTiming();
-    for (const auto &i : random_ints) {
+    reset_with_random_vals(random_vals);
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (const auto &i : random_vals) {
       q.tryPush(i);
     }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed_seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
+    state.SetIterationTime(elapsed_seconds.count());
   }
+  state.SetBytesProcessed(state.range() * state.iterations() * sizeof(Value));
   state.SetItemsProcessed(state.range() * state.iterations());
 }
 
 template <template <typename> typename Q>
 static void BM_PopOnly(benchmark::State &state) {
-  Q<int> q(state.range());
-  std::vector<int> random_ints(state.range());
+  using Value = int;
+  Q<Value> q(state.range());
+  std::vector<Value> random_vals(state.range());
 
   for (auto _ : state) {
-    state.PauseTiming();
-    reset_with_random_vals(random_ints);
-    for (const auto &i : random_ints) {
+    reset_with_random_vals(random_vals);
+    for (const auto &i : random_vals) {
       q.tryPush(i);
     }
-    state.ResumeTiming();
-    for (const auto &i : random_ints) {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (const auto &i : random_vals) {
       int e;
       q.tryPop(e);
     }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed_seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
+    state.SetIterationTime(elapsed_seconds.count());
   }
+  state.SetBytesProcessed(state.range() * state.iterations() * sizeof(Value));
   state.SetItemsProcessed(state.range() * state.iterations());
 }
 
@@ -127,30 +139,30 @@ template <typename Q>
 static void BM_SequenialPushPop(benchmark::State &state) {
   using Value = typename Q::ValueT;
 
-  std::vector<Value> random_ints(state.range());
+  std::vector<Value> random_vals(state.range());
   std::size_t pop_count;
   Q q(state.range());
 
   for (auto _ : state) {
-    state.PauseTiming();
-    reset_with_random_vals(random_ints);
-    for (const auto &i : random_ints) {
-      q.tryPush(i);
-    }
-    state.ResumeTiming();
-
-    for (const auto &e : random_ints) {
+    reset_with_random_vals(random_vals);
+    for (const auto &e : random_vals) {
       q.tryPush(e);
     }
 
-    typename Q::ValueT e;
+    Value e;
+    // Using manual timing because Start/Pause timing has too much overhead
+    auto start = std::chrono::high_resolution_clock::now();
     while (pop_count++ < state.range()) {
       q.tryPop(e);
     }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed_seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
+
+    state.SetIterationTime(elapsed_seconds.count());
   }
 
-  if constexpr (std::is_integral_v<Value>)
-    state.SetBytesProcessed(state.range() * state.iterations() * sizeof(Value));
+  state.SetBytesProcessed(state.range() * state.iterations() * sizeof(Value));
   state.SetItemsProcessed(state.range() * state.iterations());
 }
 
@@ -158,18 +170,18 @@ template <typename Q>
 static void BM_2ThreadPushPop(benchmark::State &state) {
   using Value = typename Q::ValueT;
 
-  std::vector<Value> random_ints(state.range() >> 2);
-  
+  std::vector<Value> random_vals(state.range() >> 2);
+
   // use queue a quarter of size of the input
   Q q(state.range());
 
   for (auto _ : state) {
-    reset_with_random_vals(random_ints);
+    reset_with_random_vals(random_vals);
 
     // Using manual timing because Start/Pause timing has too much overhead
     auto start = std::chrono::high_resolution_clock::now();
     std::jthread producer([&] {
-      for (const auto &e : random_ints) {
+      for (const auto &e : random_vals) {
         q.tryPush(e);
       }
     });
@@ -200,16 +212,16 @@ template <typename Q>
 static void BM_2ThreadChunkedPushPop(benchmark::State &state) {
   using Value = typename Q::ValueT;
 
-  std::vector<Value> random_ints(state.range());
+  std::vector<Value> random_vals(state.range());
   // use 2MB chunks
   const auto chunk_size = 2 * 1048 * 1048 / sizeof(Value);
-  auto chunks = random_ints | std::views::chunk(chunk_size);
-  
+  auto chunks = random_vals | std::views::chunk(chunk_size);
+
   // use queue a quarter of size of the input
   Q q(state.range() >> 2);
 
   for (auto _ : state) {
-    reset_with_random_vals(random_ints);
+    reset_with_random_vals(random_vals);
 
     // Using manual timing because Start/Pause timing has too much overhead
     auto start = std::chrono::high_resolution_clock::now();
